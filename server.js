@@ -123,7 +123,7 @@ function getAvailableCategories() {
 
 // 1. Serve o arquivo HTML principal na rota '/'
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'starting.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // 2. Serve os arquivos estáticos (músicas)
