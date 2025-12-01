@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starting Soon V14 - Stream (Node.js/Socket.IO)</title>
+
+    <link rel="icon" href="data:;base64,iVBORw0go=">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+        /* --- RESET & BASE --- */
+        :root {
+            --bg-color: #020204;
+            --accent-color: #8A2EFF;
+            --text-primary: #ffffff;
+            --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+            /* Ease Out Quint - Super Smooth */
+            --ease-elastic: cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* Spring-like */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            /* CORREÇÃO: Remove o !important para permitir a transição/remoção de fundo */
+            background-color: #000000;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- ESTILOS DO BOTÃO DE TESTE TEMPORÁRIO --- */
+        .test-button {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: none;
+            padding: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background 0.3s var(--ease-smooth), color 0.3s var(--ease-smooth), transform 0.4s var(--ease-elastic), box-shadow 0.3s var(--ease-smooth);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            flex-shrink: 0;
+        }
+
+        .test-button:hover {
+            background: var(--accent-color);
+            color: var(--text-primary);
+            box-shadow: 0 0 20px rgba(138, 46, 255, 0.6);
+            transform: scale(1.1) translateY(-2px);
+        }
+
+        .test-button:active {
+            transform: scale(0.95);
+        }
+
+        /* --- ESTADO DE ENCOLHIMENTO PARA O PLAYER --- */
+
+        /* CORREÇÃO: Remove o fundo preto do body para revelar a live */
+        body.shrinking-state-to-player {
+            background-color: transparent !important;
+            box-shadow: none;
+            /* Transição para suavizar a remoção do fundo, se houver */
+            transition: background-color 0.5s ease-out;
+        }
+
+        /* Encolhe os fundos para o canto do player */
+        body.shrinking-state-to-player #bg-canvas-aurora,
+        body.shrinking-state-to-player #bg-canvas-matrix {
+            transform-origin: 100% 100%;
+            transform: scale(0.01);
+            /* O "!important" garante que a opacidade caia para 0 */
+            opacity: 0 !important;
+            transition:
+                transform 1.8s cubic-bezier(0.68, -0.55, 0.27, 1.55),
+                opacity 1.0s ease-out 0.8s;
+        }
+
+        /* O "glass-container" também encolhe e desaparece */
+        body.shrinking-state-to-player .glass-container {
+            transform: translate(calc(50vw - 200px), calc(50vh - 70px)) scale(0.05);
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 1.8s cubic-bezier(0.68, -0.55, 0.27, 1.55),
+                opacity 1.0s ease-out 0.8s;
+        }
+
+        body.shrinking-state-to-player .music-player,
+        body.shrinking-state-to-player #size-trail {
+            opacity: 1;
+            z-index: 10000;
+        }
+
+        /* Overlay para forçar interação de áudio se necessário */
+        #start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* Fundo sólido 100% preto para evitar transparência no OBS */
+            background: #000000;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            cursor: pointer;
+            font-size: 1.5rem;
+            opacity: 1;
+            transition: opacity 0.5s ease-out;
+        }
+
+        #start-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* --- BACKGROUND CANVAS (Inicialmente Invisível) --- */
+        #bg-canvas-aurora,
+        #bg-canvas-matrix {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            pointer-events: none;
+            /* Começa invisível sobre o fundo preto absoluto */
+            opacity: 0;
+            transition: opacity 1.0s ease-out;
+        }
+
+        /* Classe para ativar o fade-in após o clique */
+        #bg-canvas-aurora.active {
+            opacity: 0.6;
+        }
+
+        #bg-canvas-matrix.active {
+            opacity: 0.1;
+        }
+
+        /* --- CONTAINER PRINCIPAL (Glassmorphism) --- */
+        .glass-container {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding: 4rem 6rem;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px) saturate(120%);
+            -webkit-backdrop-filter: blur(20px) saturate(120%);
+            border-radius: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow:
+                0 0 80px rgba(0, 0, 0, 0.6),
+                inset 0 0 30px rgba(255, 255, 255, 0.02);
+            animation: gentleFloat 10s ease-in-out infinite;
+        }
+
+        /* --- TIPOGRAFIA --- */
+        h1 {
+            font-size: 5.5rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+            margin-bottom: 1rem;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+
+            color: #c9c7c7;
+        }
+
+        .subtitle {
+            font-size: 1.6rem;
+            font-weight: 300;
+            color: #d1d1d1;
+            letter-spacing: 5px;
+            margin-bottom: 3rem;
+            text-transform: uppercase;
+
+            transition: color 0.2s;
+        }
+
+
+        /* --- CONTADOR COM EFEITO RGB --- */
+        .timer-wrapper {
+            display: inline-block;
+            margin-bottom: 0.5rem;
+            transition: text-shadow 0.1s ease-out;
+        }
+
+        #timer {
+            font-size: 6rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+
+            /* Gradiente pastel + 30% mais intenso */
+            background: linear-gradient(to right,
+                    #b366ff,
+                    /* Roxo Suave +30% */
+                    #66b3ff,
+                    /* Azul Suave +30% */
+                    #b366ff
+                    /* Roxo Suave +30% */
+                );
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+
+            animation: hueShiftText 8s linear infinite;
+
+            /* Glow mais suave */
+            filter: drop-shadow(0 0 15px rgba(179, 102, 255, 0.5));
+
+            /* Transição suave do glow */
+            transition: filter 0.3s var(--ease-smooth);
+        }
+
+
+        /* --- SOCIAL LINKS --- */
+        .social-links {
+            margin-top: 2rem;
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .social-item {
+            display: flex;
+            align-items: center;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: #b0b0b0;
+            transition: color 0.3s;
+            text-decoration: none;
+        }
+
+        .social-item i {
+            color: var(--accent-color);
+            margin-right: 10px;
+            font-size: 1.5rem;
+            transition: transform 0.4s var(--ease-elastic), filter 0.3s var(--ease-smooth);
+        }
+
+        .social-item:hover {
+            color: var(--text-primary);
+        }
+
+        .social-item:hover i {
+            transform: scale(1.2) rotate(5deg);
+            filter: drop-shadow(0 0 8px var(--accent-color));
+        }
+
+        /* --- TRAIL CINZA (ancorado à esquerda) --- */
+        #size-trail {
+            position: fixed;
+            top: auto;
+            bottom: 40px;
+            /* A ancoragem agora é na esquerda, para o rastro seguir o movimento */
+            right: auto;
+            left: 50px;
+            background: rgba(128, 128, 128, 0.4);
+            border-radius: 36px;
+            z-index: 999;
+            pointer-events: none;
+            transition: width 0.4s ease-out, opacity 0.3s ease-in, transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            width: 0;
+        }
+
+        /* --- MUSIC PLAYER E VISUALIZADOR --- */
+        .music-player {
+            position: fixed;
+            bottom: 40px;
+            /* Ancoragem fixa na DIREITA: garante que a expansão/contração seja para a esquerda. */
+            right: 50px;
+            z-index: 1000;
+            display: flex;
+            /* Inverte a ordem dos itens (Visualizador -> Info -> Botão) */
+            flex-direction: row-reverse;
+            align-items: center;
+
+            /* Ajustes de espaçamento para conter as barras */
+            gap: 15px;
+            /* Inverte o padding para o lado direito ficar menor (onde está o botão/barras) */
+            padding: 12px 18px 12px 25px;
+
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 36px;
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            pointer-events: auto;
+
+            width: auto;
+            /* Garante transição suave de largura (Expansão e Encolhimento) */
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .music-info {
+            /* Textos alinhados à esquerda (melhor para o player que cresce para a esquerda) */
+            text-align: left;
+            position: relative;
+            overflow: visible;
+            height: auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-start;
+            min-width: 160px;
+            width: max-content;
+        }
+
+        .music-status {
+            font-size: 0.72rem;
+            color: #7700ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            font-weight: 800;
+        }
+
+        .track-name-container {
+            position: relative;
+            bottom: auto;
+            right: auto;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            /* Alinhamento para o lado que está sendo expandido/encolhido */
+            justify-content: flex-start;
+            overflow: hidden;
+            height: 1.2rem;
+        }
+
+        .music-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #e6e6e6;
+            white-space: nowrap;
+            line-height: 1.2;
+            display: inline-block;
+            /* Padding à direita para não "colar" no botão. */
+            padding-right: 6px;
+            transition: transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.25), opacity 0.5s ease-out;
+            transform: translateY(0%);
+            opacity: 1;
+        }
+
+        /* ESTADOS DE TRANSIÇÃO DA ROLETA (mantidos para a fluidez) */
+        .music-title.initial {
+            transform: translateY(0%);
+            opacity: 1;
+        }
+
+        .music-title.leaving {
+            transform: translateY(-100%);
+            opacity: 0;
+            transition: transform 0.3s ease-in, opacity 0.2s ease-in;
+        }
+
+        .music-title.hidden-below {
+            transform: translateY(100%);
+            opacity: 0;
+            transition: none;
+        }
+
+        .music-title.entering-bounce {
+            transform: translateY(0%);
+            opacity: 1;
+            transition: transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.25), opacity 0.4s ease-out;
+        }
+
+        .bars-container {
+            display: flex;
+            align-items: center;
+            height: 40px;
+            gap: 5px;
+            /* Garante que as barras estejam no fim (direita) quando a direção é invertida */
+            flex-shrink: 0;
+        }
+
+        /* --- ESTILOS DO BAR ATUALIZADOS PARA LOOP PERFEITO --- */
+        .bar {
+            width: 6px;
+            height: 4px;
+            border-radius: 20px;
+
+            /* Gradiente levemente mais intenso (10% a mais) */
+            background: linear-gradient(to top,
+                    #99dfff,
+                    /* Azul Claro Suave +10% */
+                    #e699ff,
+                    /* Magenta Suave +10% */
+                    #ccff99,
+                    /* Amarelo/Verde Suave +10% */
+                    #99dfff
+                    /* Azul Claro Suave +10% */
+                );
+
+            background-size: 100% 400%;
+            animation: gradientShift 8s infinite linear;
+            transition: height 0.1s ease-out;
+        }
+
+        /* Configuração de Delay Individual para cada barra (Dessincronizado) */
+        .bar:nth-child(1) {
+            animation-delay: 0.0s;
+        }
+
+        .bar:nth-child(2) {
+            animation-delay: -1.2s;
+        }
+
+        .bar:nth-child(3) {
+            animation-delay: -2.4s;
+        }
+
+        .bar:nth-child(4) {
+            animation-delay: -3.6s;
+        }
+
+        .bar:nth-child(5) {
+            animation-delay: -4.8s;
+        }
+
+
+        /* --- KEYFRAMES --- */
+        @keyframes gentleFloat {
+            0% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+
+            100% {
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes hueShiftText {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        /* O Keyframe ajustado para loop perfeito */
+        @keyframes gradientShift {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            100% {
+                background-position: 0% 450%;
+                /* Move exatamente 400% (um ciclo completo) */
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="start-overlay">Clique na tela para iniciar a Stream Engine</div>
+
+    <canvas id="bg-canvas-aurora"></canvas>
+    <canvas id="bg-canvas-matrix"></canvas>
+    <div class="glass-container">
+        <h1>Starting Soon</h1>
+        <div class="subtitle" id="category-display">System Initialization...</div>
+
+        <div class="timer-wrapper" id="timer-wrapper">
+            <span id="timer">01:00</span>
+        </div>
+
+        <div class="social-links">
+            <a href="https://twitch.tv/soldadohmbr" target="_blank" class="social-item">
+                <i class="fab fa-twitch"></i>
+                <span>soldadohmbr</span>
+            </a>
+            <a href="https://github.com/SoldadoHumano" target="_blank" class="social-item">
+                <i class="fab fa-github"></i>
+                <span>SoldadoHumano</span>
+            </a>
+            <a href="#" target="_blank" class="social-item">
+                <i class="fab fa-discord"></i>
+                <span>vitor1227_op</span>
+            </a>
+        </div>
+
+    </div>
+
+    <div id="size-trail"></div>
+
+    <div class="music-player">
+        <audio id="bg-music" crossorigin="anonymous" volume="1" preload="none"></audio>
+
+        <div class="music-info">
+            <div class="music-status">TOCANDO AGORA:</div>
+            <div class="track-name-container">
+                <div class="music-title" id="track-name-current">Nenhuma música</div>
+            </div>
+        </div>
+
+        <button id="test-skip-button" title="Pular Música (Teste)" class="test-button">
+            <i class="fas fa-forward"></i>
+        </button>
+        <div class="bars-container" id="visualizer-bars">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+        </div>
+    </div>
+
+    <span id="temp-width-calculator"
+        style="position: absolute; visibility: hidden; white-space: nowrap; font-size: 1rem; font-weight: 600; font-family: 'Outfit', sans-serif;"></span>
+
+
+    <script>
+        /* =========================================
+           CONFIGURAÇÕES GERAIS
+        ========================================= */
+        const CONFIG = {
+            countdownMinutes: 0,
+
+            // CONFIGURAÇÕES MATRIX RAIN
+            matrixFontSize: 14,
+            matrixDropSpeed: 1.5,
+            matrixFadeSpeed: 0.03,
+            matrixColor: '#00BFFF',
+
+            // Defina a categoria de música desejada aqui!
+            initialMusicCategory: "Mix",
+        };
+
+        /* =========================================
+           0. CONEXÃO SOCKET.IO
+        ========================================= */
+        const socket = io();
+
+        /* =========================================
+           1. COUNTDOWN TIMER
+        ========================================= */
+        class Countdown {
+            // Modificado para aceitar callback onComplete
+            constructor(minutes, onCompleteCallback) {
+                this.totalSeconds = minutes * 60;
+                this.timerElement = document.getElementById('timer');
+                this.interval = null;
+                this.onCompleteCallback = onCompleteCallback;
+            }
+            start() {
+                this.updateDisplay();
+                this.interval = setInterval(() => {
+                    this.totalSeconds--;
+                    if (this.totalSeconds < 0) {
+                        this.complete();
+                    } else {
+                        this.updateDisplay();
+                    }
+                }, 1000);
+            }
+            updateDisplay() {
+                const m = Math.floor(this.totalSeconds / 60);
+                const s = this.totalSeconds % 60;
+                this.timerElement.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+
+            complete() {
+                clearInterval(this.interval);
+                this.timerElement.textContent = "AO VIVO";
+
+                // Aplica a classe de animação de encolhimento no <body>
+                document.body.classList.add('shrinking-state-to-player');
+
+                // Executa o callback de limpeza (parar animações)
+                if (this.onCompleteCallback) {
+                    this.onCompleteCallback();
+                }
+            }
+        }
+
+        /* =========================================
+           2. SISTEMA DE PLAYLIST E ÁUDIO (COM REDIMENSIONAMENTO)
+        ========================================= */
+        class AudioVisualizer {
+            constructor(audioElementId, barsContainerId) {
+                this.audio = document.getElementById(audioElementId);
+                this.barsContainer = document.getElementById(barsContainerId);
+                this.bars = Array.from(this.barsContainer.getElementsByClassName('bar'));
+                this.currentTrackTitleElement = document.getElementById('track-name-current');
+
+                this.musicPlayer = document.querySelector('.music-player');
+                this.sizeTrail = document.getElementById('size-trail');
+                this.tempCalculator = document.getElementById('temp-width-calculator');
+
+                this.audioContext = null;
+                this.analyser = null;
+                this.dataArray = null;
+                this.isPlaying = false;
+
+                // Flag para impedir que o áudio e a atualização de faixa funcionem antes do clique
+                this.isActive = false;
+
+                this.audio.addEventListener('ended', () => {
+                    this.requestNextTrack();
+                });
+
+                // Ouve as atualizações, mas só age se isActive for TRUE
+                socket.on('trackUpdate', (trackInfo) => {
+                    this.updateTrack(trackInfo.name, trackInfo.url);
+                });
+            }
+
+            requestNextTrack() {
+                socket.emit('nextTrack');
+            }
+
+            /**
+             * Calcula o novo tamanho necessário para o player.
+             * @param {string} text - O nome da música.
+             * @returns {number} A largura total calculada em pixels.
+             */
+            calculateNewWidth(text) {
+                this.tempCalculator.textContent = text;
+                const rawTextWidth = this.tempCalculator.offsetWidth;
+
+                // 1. Largura do componente de informação (mínimo de 160px, ou a largura do texto)
+                const musicInfoWidth = Math.max(160, rawTextWidth);
+
+                // 2. Largura dos componentes fixos:
+                // Skip Button (40px) + Bars (50px, aprox 5*6px+4*5px) = 90px
+                const componentsWidth = 90;
+
+                // 3. Espaçamento:
+                // Gaps (15px + 15px) + Padding (25px left + 18px right) = 30px + 43px = 73px
+                const spacingWidth = 73;
+
+                // Nova Largura Total
+                const newTotalWidth = musicInfoWidth + componentsWidth + spacingWidth;
+
+                // Garante um mínimo total.
+                const overallMinWidth = 0;
+
+                return Math.max(overallMinWidth, newTotalWidth);
+            }
+
+            updateTrack(nextTrackName, nextTrackUrl) {
+                // CORREÇÃO ESSENCIAL: Ignora a atualização de faixa se a engine não foi iniciada (clicada)
+                if (!this.isActive) {
+                    console.log("Recebida atualização de faixa, mas Stream Engine não iniciada. Ignorando.");
+                    return;
+                }
+
+                const currentElement = this.currentTrackTitleElement;
+
+                let originalName = nextTrackName || "Nenhuma música";
+                let displayTrackName = originalName;
+
+                // Lógica de Largura
+                const currentWidth = this.musicPlayer.offsetWidth;
+                const newDesiredWidth = this.calculateNewWidth(displayTrackName);
+                const isShrinking = newDesiredWidth < currentWidth;
+
+                // 1. ANIMAÇÃO DE TEXTO (Sobe/Desce)
+                currentElement.classList.remove('initial', 'hidden-below', 'entering-bounce');
+                currentElement.classList.add('leaving');
+
+                // 2. ANIMAÇÃO DE LARGURA (Rastro Cinza para Encolhimento)
+                if (isShrinking) {
+                    const deltaWidth = currentWidth - newDesiredWidth;
+                    this.sizeTrail.style.width = `${currentWidth}px`;
+                    this.sizeTrail.style.opacity = '1';
+                    this.sizeTrail.style.height = `${this.musicPlayer.offsetHeight}px`;
+                    this.sizeTrail.style.transform = `translateX(${currentWidth - newDesiredWidth}px)`;
+
+                    setTimeout(() => {
+                        this.sizeTrail.style.width = `${newDesiredWidth}px`;
+                        this.sizeTrail.style.opacity = '0';
+                        this.sizeTrail.style.transform = `translateX(0px)`;
+                    }, 50);
+                }
+
+                this.musicPlayer.style.width = `${newDesiredWidth}px` + 1;
+
+
+                // 3. ATUALIZAÇÃO E ENTRADA DO NOVO TEXTO
+                setTimeout(() => {
+                    currentElement.textContent = displayTrackName;
+                    this.audio.src = nextTrackUrl;
+                    this.audio.load();
+
+                    currentElement.classList.remove('leaving');
+                    currentElement.classList.add('hidden-below');
+
+                    void currentElement.offsetWidth; // Força reflow
+
+                    currentElement.classList.remove('hidden-below');
+                    currentElement.classList.add('entering-bounce');
+
+                    // NOVO: Chamada para play
+                    if (nextTrackUrl) {
+                        this.audio.play().catch(e => {
+                            console.warn("Erro ao iniciar próxima faixa (esperado antes da primeira interação):", e.message);
+                        });
+                    }
+
+                    // 4. RESET DO RASTRO após a animação
+                    if (isShrinking) {
+                        setTimeout(() => {
+                            this.sizeTrail.style.width = '0px';
+                            this.sizeTrail.style.transform = 'translateX(0px)';
+                        }, 600);
+                    }
+
+                }, 350);
+            }
+
+            // MANTIDO: initAudioContext
+            initAudioContext() {
+                if (this.audioContext) return;
+
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.audioContext = new AudioContext();
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256;
+
+                    const source = this.audioContext.createMediaElementSource(this.audio);
+                    source.connect(this.analyser);
+                    this.analyser.connect(this.audioContext.destination);
+
+                    const bufferLength = this.analyser.frequencyBinCount;
+                    this.dataArray = new Uint8Array(bufferLength);
+                    this.isPlaying = true;
+                    this.animateBars();
+
+                } catch (error) {
+                    console.warn("Visualizador de áudio desativado (CORS ou erro de inicialização):", error);
+                    // O fallbackAnimation() foi removido daqui para evitar animação antes do clique.
+                }
+            }
+
+            animateBars() {
+                if (!this.isPlaying) return;
+                requestAnimationFrame(() => this.animateBars());
+
+                try {
+                    this.analyser.getByteFrequencyData(this.dataArray);
+
+                    const visualizerFrequencyIndexes = [2, 6, 12, 25, 60];
+
+                    this.bars.forEach((bar, i) => {
+                        const value = this.dataArray[visualizerFrequencyIndexes[i]] || 0;
+                        const height = Math.max(5, (value / 255) * 50);
+                        bar.style.height = `${height}px`;
+                    });
+
+                } catch (e) {
+                    console.error("Erro na animação das barras:", e);
+                }
+            }
+        }
+
+        /* =========================================
+           3. BACKGROUND AURORA V2 (Inalterado)
+        ========================================= */
+        class AuroraBackground {
+            constructor() {
+                this.canvas = document.getElementById('bg-canvas-aurora');
+                if (!this.canvas) return;
+                this.ctx = this.canvas.getContext('2d');
+                this.time = 0;
+                this.animationId = null; // Armazena o ID da animação
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+                this.animate();
+            }
+            resize() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+            }
+
+            drawLayer(density, speed, baseHue, opacityFactor) {
+                for (let i = 0; i < density; i++) {
+                    this.ctx.beginPath();
+                    const x = Math.sin(this.time * speed + i * 0.1) * this.canvas.width * 0.5 + this.canvas.width / 2;
+                    const y = Math.cos(this.time * speed * 0.8 + i * 0.15) * this.canvas.height * 0.3 + this.canvas.height / 2;
+
+                    const gradient = this.ctx.createRadialGradient(x, y, 1, x, y, 200);
+                    const hue = baseHue + i * 2;
+                    gradient.addColorStop(0, `hsla(${hue}, 80%, 60%, ${0.05 * opacityFactor})`);
+                    gradient.addColorStop(1, 'transparent');
+
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.arc(x, y, this.canvas.width, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+
+            animate() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.time += 1;
+
+                this.ctx.globalCompositeOperation = 'lighter';
+
+                // Adjusted for smoother, slower animation
+                this.drawLayer(50, 0.0005, 200, 1.0);
+                this.drawLayer(80, 0.00025, 250, 0.7);
+
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+
+            // CORREÇÃO 2: Método para parar a animação e poupar GPU
+            stop() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                    // Opcional: Limpar o canvas
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    console.log("Aurora Animation Parada (GPU Liberada)");
+                }
+            }
+        }
+
+        /* =========================================
+           4. BACKGROUND MATRIX RAIN (Inalterado)
+        ========================================= */
+        class MatrixRain {
+            constructor() {
+                this.canvas = document.getElementById('bg-canvas-matrix');
+                if (!this.canvas) return;
+                this.ctx = this.canvas.getContext('2d');
+                this.characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_<>{}[]()!@#$%^&*+-=/';
+                this.drops = [];
+                this.animationId = null; // Armazena o ID da animação
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+                this.initDrops();
+                this.animate();
+            }
+
+            resize() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+            }
+
+            initDrops() {
+                const numCols = Math.floor(this.canvas.width / CONFIG.matrixFontSize);
+                for (let i = 0; i < numCols; i++) {
+                    this.drops[i] = {
+                        x: i * CONFIG.matrixFontSize,
+                        y: Math.random() * this.canvas.height,
+                        speed: Math.random() * CONFIG.matrixDropSpeed + 0.5,
+                        length: Math.random() * 20 + 10
+                    };
+                }
+            }
+
+            drawChar(char, x, y, color) {
+                this.ctx.fillStyle = color;
+                this.ctx.fillText(char, x, y);
+            }
+
+            animate() {
+                this.ctx.fillStyle = 'rgba(2, 2, 4, ' + CONFIG.matrixFadeSpeed + ')';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.ctx.font = CONFIG.matrixFontSize + 'px monospace';
+
+                for (let i = 0; i < this.drops.length; i++) {
+                    const drop = this.drops[i];
+
+                    for (let j = 0; j < drop.length; j++) {
+                        const char = this.characters[Math.floor(Math.random() * this.characters.length)];
+                        const charY = drop.y - j * CONFIG.matrixFontSize;
+
+                        const opacity = 1 - (j / drop.length);
+                        const hexColor = CONFIG.matrixColor.slice(1);
+                        const r = parseInt(hexColor.substring(0, 2), 16);
+                        const g = parseInt(hexColor.substring(2, 4), 16);
+                        const b = parseInt(hexColor.substring(4, 6), 16);
+
+                        const color = `rgba(${r}, ${g}, ${b}, ${opacity * 0.5})`;
+                        this.drawChar(char, drop.x, charY, color);
+                    }
+
+                    drop.y += drop.speed * CONFIG.matrixFontSize;
+
+                    if (drop.y > this.canvas.height + drop.length * CONFIG.matrixFontSize && Math.random() > 0.98) {
+                        drop.y = 0;
+                        drop.speed = Math.random() * CONFIG.matrixDropSpeed + 0.5;
+                        drop.length = Math.random() * 20 + 10;
+                    }
+                }
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+
+            // CORREÇÃO 2: Método para parar a animação e poupar GPU
+            stop() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    console.log("Matrix Animation Parada (GPU Liberada)");
+                }
+            }
+        }
+
+        /* =========================================
+           INICIALIZAÇÃO & CONTROLE DE EVENTOS
+        ========================================= */
+        window.addEventListener('DOMContentLoaded', () => {
+
+            // Instancia as animações e guarda nas variáveis
+            const auroraBg = new AuroraBackground();
+            const matrixBg = new MatrixRain();
+
+            // Passa uma função de callback para parar as animações ao fim do countdown
+            const countdown = new Countdown(CONFIG.countdownMinutes, () => {
+                auroraBg.stop();
+                matrixBg.stop();
+            });
+
+            const skipButton = document.getElementById('test-skip-button');
+            const audioViz = new AudioVisualizer('bg-music', 'visualizer-bars');
+            const audioElem = document.getElementById('bg-music');
+            const overlay = document.getElementById('start-overlay');
+            const categoryDisplay = document.getElementById('category-display');
+
+            const auroraCanvas = document.getElementById('bg-canvas-aurora');
+            const matrixCanvas = document.getElementById('bg-canvas-matrix');
+
+            audioElem.volume = 1;
+
+            // Define a categoria, mas NÃO a envia ao servidor ainda.
+            const category = CONFIG.initialMusicCategory;
+
+            if (categoryDisplay) {
+                // Exibe a categoria estaticamente no texto.
+                categoryDisplay.textContent = `Live iniciando em breve...`;
+            }
+
+            function startEngine() {
+                // 1. Inicia o contador
+                countdown.start();
+
+                // 2. Ativa o fade-in dos backgrounds dinâmicos
+                auroraCanvas.classList.add('active');
+                matrixCanvas.classList.add('active');
+
+                // 3. Ativa o processamento de áudio antes de pedir a primeira faixa
+                audioViz.isActive = true;
+
+                // 4. MÚSICA É SOLICITADA AO SERVIDOR!
+                socket.emit('changeCategory', category);
+
+                // 5. Inicializa o contexto de áudio e tenta dar play
+                audioViz.initAudioContext();
+                const playPromise = audioElem.play();
+
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        overlay.classList.add('hidden');
+                    })
+                        .catch(error => {
+                            console.warn("Erro ao iniciar áudio (requer interação).");
+                        });
+                }
+
+                overlay.classList.add('hidden');
+
+                // Boa prática: remove o listener para evitar múltiplas ativações
+                overlay.removeEventListener('click', startEngine);
+            }
+
+            // Garante que o evento de clique só seja associado se o overlay existir
+            if (overlay) {
+                overlay.addEventListener('click', startEngine);
+            }
+
+            if (skipButton) {
+                skipButton.addEventListener('click', () => {
+                    audioViz.requestNextTrack();
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>
