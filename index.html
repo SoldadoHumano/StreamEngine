@@ -161,13 +161,26 @@
             font-size: 6rem;
             font-weight: 800;
             font-variant-numeric: tabular-nums;
-            background: linear-gradient(to right, #b366ff, #66b3ff, #b366ff);
+            background: linear-gradient(to right,
+                    #b366ff 0%,
+                    #66b3ff 50%,
+                    #b366ff 100%);
             background-size: 200% auto;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            animation: hueShiftText 8s linear infinite;
+            animation: moveGradient 10s linear infinite alternate;
             filter: drop-shadow(0 0 15px rgba(179, 102, 255, 0.5));
             transition: filter 0.3s var(--ease-smooth);
+        }
+
+        @keyframes moveGradient {
+            from {
+                background-position: 0% center;
+            }
+
+            to {
+                background-position: -100% center;
+            }
         }
 
         .social-links {
@@ -328,12 +341,11 @@
                     #ffb3cc,
                     #c3b3ff,
                     #b3ffe0,
-                    #99dfff
-                );
+                    #99dfff);
 
             background-size: 100% 800%;
 
-            animation: gradientLoop 30s linear infinite;
+            animation: gradientLoop 60s linear infinite;
 
             transition: height 0.1s ease-out;
         }
@@ -454,7 +466,7 @@
     <script>
         const CONFIG = {
             // Defina aqui o tempo do countdown em minutos
-            countdownMinutes: 0,
+            countdownMinutes: 10,
 
             // Configurações da chuva de caracteres estilo matrix
             matrixFontSize: 14,
