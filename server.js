@@ -15,7 +15,7 @@ const MUSIC_DIR = path.join(__dirname, 'music');
 // Variáveis de Estado Global
 let currentPlaylist = [];
 let currentTrackIndex = -1;
-let currentCategory = ''; // Armazena a categoria atual
+let currentCategory = ''; 
 
 /**
  * Embaralha um array de forma aleatória (Algoritmo de Fisher-Yates).
@@ -163,7 +163,7 @@ io.on('connection', (socket) => {
 // INICIALIZAÇÃO
 // ------------------------------------------------------------------
 server.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+    console.log(`Servidor rodando em http://localhost:${PORT}`);
     console.log('Disponível para stream (OBS) em:', `http://SUA_IP:${PORT}`);
-    console.log('Aguardando o cliente (starting.html) enviar a categoria de música...');
+    console.log('Aguardando o cliente (index.html) enviar a categoria de música...');
 });
